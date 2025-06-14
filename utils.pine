@@ -1,0 +1,321 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Mark_The_Systemizer
+
+
+//@version=6
+
+
+// @description Trading utilities
+library("utils", overlay=true)
+
+
+
+
+// @function getBetSize: Gets the bet size based on the stop loss and the riskPercentOfEquity
+// @param stop: stop loss price
+// @param riskPercentOfEquity: Percent of equity to risk on this trade. Between 0 and 1, 1 = 100% equity
+// @return returns the bet size to be used in strategy.enter()
+export getBetSize(float stop, float riskPercentOfEquity = 0.01) =>
+    onePercentCapital = strategy.equity * riskPercentOfEquity
+    betSize = onePercentCapital / math.abs(close - stop)
+
+
+
+
+// @function drawDailyTable: Draws daily analysis of win loss %
+export DrawDailyTable()=>
+    if barstate.islastconfirmedhistory
+        var table dayTable = table.new(position.top_right, 8, 5, border_width=1, border_color=color.gray, bgcolor=color.new(color.black, 90), force_overlay = true)
+        daysOfWeek = array.from("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        tradesPerDay = array.new_int(7, 0)
+        winsPerDay = array.new_int(7, 0)
+        pnlPerDay = array.new_float(7, 0) // 1. Add another array to keep track of daily profits for each day
+       
+        for i = 0 to strategy.closedtrades - 1
+            tradeDay = dayofweek(strategy.closedtrades.entry_time(i))
+            tradesPerDay.set(tradeDay - 1, tradesPerDay.get(tradeDay - 1) + 1)
+            if strategy.closedtrades.profit(i) > 0
+                winsPerDay.set(tradeDay - 1, winsPerDay.get(tradeDay - 1) + 1)
+            pnlPerDay.set(tradeDay - 1, pnlPerDay.get(tradeDay - 1) + strategy.closedtrades.profit(i)) // 2. Set the profit per day in the array we created earlier
+       
+        dayTable.cell(0, 0, "Day", text_color=color.white)
+        dayTable.cell(0, 1, "Wins", text_color=color.white)
+        dayTable.cell(0, 2, "Trades", text_color=color.white)
+        dayTable.cell(0, 3, "Win %", text_color=color.white)
+        dayTable.cell(0, 4, "PnL", text_color=color.white) // 3. Add the PnL row
+       
+        for i = 0 to 6
+            winRate = array.get(winsPerDay, i) / math.max(array.get(tradesPerDay, i), 1) * 100
+            dayTable.cell(i + 1, 0, array.get(daysOfWeek, i), text_color=color.white)
+            dayTable.cell(i + 1, 1, str.tostring(array.get(winsPerDay, i)), text_color=color.white)
+            dayTable.cell(i + 1, 2, str.tostring(array.get(tradesPerDay, i)), text_color=color.white)
+            dayTable.cell(i + 1, 3, str.tostring(na(winRate) ? "N/A" : str.tostring(math.round(winRate)) + "%"), text_color=color.white)
+            dayTable.cell(i + 1, 4, str.tostring(math.round(array.get(pnlPerDay, i))), text_color=color.white) // 4. Round the total profit and display in table
+
+
+// Function to calculate Julian date
+// @function julianDate: converts the current year, month and day into a julian date
+// @param yearToCheck: the current year
+// @param monthToCheck: the current month
+// @param dayToCheck: the current day
+// @returns: The julian date of the time passed in
+export julianDate(int yearToCheck = year, int monthToCheck = month, int dayToCheck = dayofmonth) =>
+    a = math.floor((14 - monthToCheck) / 12)
+    y = yearToCheck + 4800 - a
+    m = monthToCheck + 12 * a - 3
+    dayToCheck + math.floor((153 * m + 2) / 5) + 365 * y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400) - 32045
+
+
+// @function isFullMoon: checks if the date passed in is a full moon
+// @param yearToCheck: year to check
+// @param monthToCheck: month to check
+// @param dayToCheck: day to check
+// @returns: true if the date is a full moon or false if it is not
+export isFullMoon(int yearToCheck = year, int monthToCheck = month, int dayToCheck = dayofmonth) =>
+    lunardays = 29.53058770576
+    new2000 = julianDate(2000, 1, 6) + 18.0/24 + 14.0/1440  // 2000-01-06 18:14 UTC
+    currentdate = julianDate(yearToCheck, monthToCheck, dayToCheck)
+   
+    totalsecs = (currentdate - new2000) * 86400  // Convert days to seconds
+    lunarsecs = lunardays * 86400
+   
+    currentsecs = totalsecs % lunarsecs
+    if currentsecs < 0
+        currentsecs := currentsecs + lunarsecs
+   
+    currentfrac = currentsecs / lunarsecs
+    currentdays = currentfrac * lunardays
+   
+    13.76529385288 <= currentdays and currentdays <= 15.76529385288
+
+
+
+
+// DATA WINDOW
+export strategyInfo() =>
+    var T_dataWindow = table.new(position.bottom_right, 2, 13, color.rgb(255, 255, 255, 55), border_width = 1)
+    if barstate.islast or barstate.islastconfirmedhistory
+        table.cell(T_dataWindow, 0, 0, 'Info', text_size = size.auto, text_color = color.white, bgcolor = color.gray, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 1, 'Initial Capital', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 2, 'Equity', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 3, 'Net Profit', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 4, 'Open Profit', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 5, 'Gross Profit', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 6, 'Gross Loss', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 7, 'Open Trades', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 8, 'Closed Trades', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 9, 'Winning Trades', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 10, 'Losing Trades', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 0, 11, 'Break Even Trades', text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+ 
+ 
+ 
+ 
+        table.cell(T_dataWindow, 1, 0, 'Value', text_size = size.auto, text_color = color.white, bgcolor = color.gray, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 1, str.tostring(strategy.initial_capital, '#.##'), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 2, str.tostring(strategy.equity, '#.##'), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 3, str.tostring(strategy.netprofit, '#.##'), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 4, str.tostring(strategy.openprofit, '#.##'), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 5, str.tostring(strategy.grossprofit, '#.##'), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 6, str.tostring(strategy.grossloss, '#.##'), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 7, str.tostring(strategy.opentrades), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 8, str.tostring(strategy.closedtrades), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 9, str.tostring(strategy.wintrades), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 10, str.tostring(strategy.losstrades), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+        table.cell(T_dataWindow, 1, 11, str.tostring(strategy.eventrades), text_size = size.auto, text_color = color.white, bgcolor = color.black, text_halign = text.align_left)
+
+
+export ev() =>
+    var T_dataWindow = table.new(position.bottom_right, 4, 5, border_width=1, border_color=color.gray, bgcolor=color.new(color.black, 30), force_overlay = true)
+ 
+ 
+    // Headers and row labels
+    table.cell(T_dataWindow, 1, 0, 'All', text_size=size.auto, text_color=color.white, text_halign=text.align_left, bgcolor=color.new(color.blue, 70))
+    table.cell(T_dataWindow, 2, 0, 'Long', text_size=size.auto, text_color=color.white, text_halign=text.align_left, bgcolor=color.new(color.blue, 70))
+    table.cell(T_dataWindow, 3, 0, 'Short', text_size=size.auto, text_color=color.white, text_halign=text.align_left, bgcolor=color.new(color.blue, 70))
+ 
+ 
+    table.cell(T_dataWindow, 0, 1, 'Closed Trades', text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 0, 2, 'Win Rate', text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 0, 3, 'EV', text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 0, 4, 'MEV', text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+ 
+ 
+    // Initialize variables
+    float winTotal = 0.0
+    float lossTotal = 0.0
+    float longTradesCount = 0.0
+    float longWinTotal = 0.0
+    float longLossTotal = 0.0
+    float longWins = 0.0
+    float shortTradesCount = 0.0
+    float shortWinTotal = 0.0
+    float shortLossTotal = 0.0
+    float shortWins = 0.0
+
+    float durationMS = time - strategy.closedtrades.entry_time(0)
+    float daysRunning = durationMS / (1000 * 60 * 60 * 24)
+    float monthsRunning = daysRunning / 30.4375
+ 
+ 
+    // Loop through closed trades
+    for i = 0 to strategy.closedtrades - 1
+        if strategy.closedtrades.profit(i) > 0
+            winTotal := winTotal + strategy.closedtrades.profit(i)
+            if strategy.closedtrades.entry_price(i) < strategy.closedtrades.exit_price(i)  // Long win
+                longWinTotal := longWinTotal + strategy.closedtrades.profit(i)
+                longTradesCount := longTradesCount + 1
+                longWins := longWins + 1
+            else  // Short win
+                shortWinTotal := shortWinTotal + strategy.closedtrades.profit(i)
+                shortTradesCount := shortTradesCount + 1
+                shortWins := shortWins + 1
+        else if strategy.closedtrades.profit(i) < 0
+            lossTotal := lossTotal - strategy.closedtrades.profit(i)  // Loss is positive for averaging
+            if strategy.closedtrades.entry_price(i) > strategy.closedtrades.exit_price(i)  // Long loss
+                longLossTotal := longLossTotal - strategy.closedtrades.profit(i)
+                longTradesCount := longTradesCount + 1
+            else  // Short loss
+                shortLossTotal := shortLossTotal - strategy.closedtrades.profit(i)
+                shortTradesCount := shortTradesCount + 1
+ 
+ 
+    // Calculate metrics
+    float winRate = strategy.closedtrades > 0 ? (strategy.wintrades / strategy.closedtrades * 100) : 0.0
+    float avgWin = strategy.wintrades > 0 ? winTotal / strategy.wintrades : 0.0
+    float avgLoss = strategy.losstrades > 0 ? lossTotal / strategy.losstrades : 0.0
+    float EV = strategy.closedtrades > 0 ? (winRate / 100 * avgWin) - ((1 - winRate / 100) * avgLoss) : 0.0
+    float MEV = EV * strategy.closedtrades / monthsRunning
+ 
+    float longWinRate = longTradesCount > 0 ? (longWins / longTradesCount * 100) : 0.0
+    float longAvgWin = longWins > 0 ? longWinTotal / longWins : 0.0
+    float longAvgLoss = (longTradesCount - longWins) > 0 ? longLossTotal / (longTradesCount - longWins) : 0.0
+    float longEV = longTradesCount > 0 ? (longWinRate / 100 * longAvgWin) - ((1 - longWinRate / 100) * longAvgLoss) : 0.0
+    float longMEV = longEV * longTradesCount / monthsRunning
+ 
+ 
+    float shortWinRate = shortTradesCount > 0 ? (shortWins / shortTradesCount * 100) : 0.0
+    float shortAvgWin = shortWins > 0 ? shortWinTotal / shortWins : 0.0
+    float shortAvgLoss = (shortTradesCount - shortWins) > 0 ? shortLossTotal / (shortTradesCount - shortWins) : 0.0
+    float shortEV = shortTradesCount > 0 ? (shortWinRate / 100 * shortAvgWin) - ((1 - shortWinRate / 100) * shortAvgLoss) : 0.0
+    float shortMEV = shortEV * shortTradesCount / monthsRunning
+ 
+ 
+    // Populate table
+    // All
+    table.cell(T_dataWindow, 1, 1, str.tostring(strategy.closedtrades), text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 1, 2, str.tostring(math.round(winRate, 0)) + "%", text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 1, 3, str.tostring(math.round(EV, 2)), text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 1, 4, str.tostring(math.round(MEV, 2)), text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+ 
+ 
+    // Long
+    table.cell(T_dataWindow, 2, 1, str.tostring(math.round(longTradesCount, 0)), text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 2, 2, str.tostring(math.round(longWinRate, 0)) + "%", text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 2, 3, str.tostring(math.round(longEV, 2)), text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 2, 4, str.tostring(math.round(longMEV, 2)), text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+ 
+ 
+    // Short
+    table.cell(T_dataWindow, 3, 1, str.tostring(math.round(shortTradesCount, 0)), text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 3, 2, str.tostring(math.round(shortWinRate, 0)) + "%", text_size=size.auto, text_color=color.white, text_halign=text.align_left)
+    table.cell(T_dataWindow, 3, 3, str.tostring(math.round(shortEV, 2)), text_size=size.auto, text_color=color.white, text_halign=text.align_left) 
+    table.cell(T_dataWindow, 3, 4, str.tostring(math.round(shortMEV, 2)), text_size=size.auto, text_color=color.white, text_halign=text.align_left) 
+
+
+export ev_heatmap() =>
+    var table heatmap = table.new(position.middle_center, 26, 9, border_width=1, border_color=color.gray, bgcolor=color.new(color.black, 90), force_overlay=true)
+       
+    // Arrays for days and hours
+    daysOfWeek = array.from("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    hours = array.new_int(24, 0)
+    for i = 0 to 23
+        hours.set(i, i)
+   
+    // 2D arrays for trades and PnL per day-hour (7 × 24 slots)
+    var tradesPerSlot = array.new_float(7 * 24, 0)
+    var pnlPerSlot = array.new_float(7 * 24, 0)
+   
+    // Arrays for totals
+    var tradesPerHour = array.new_float(24, 0)  // Total trades per hour across days
+    var pnlPerHour = array.new_float(24, 0)     // Total PnL per hour across days
+    var tradesPerDay = array.new_float(7, 0)    // Total trades per day across hours
+    var pnlPerDay = array.new_float(7, 0)       // Total PnL per day across hours
+    var totalTrades = 0.0                       // Overall trades
+    var totalPnL = 0.0                          // Overall PnL
+   
+    // Populate arrays with trade data
+    for i = 0 to strategy.closedtrades - 1
+        tradeTime = strategy.closedtrades.entry_time(i)
+        dayIdx = dayofweek(tradeTime) - 1
+        hourIdx = hour(tradeTime)
+        slotIdx = dayIdx * 24 + hourIdx
+        profit = strategy.closedtrades.profit(i)
+       
+        // Day-hour slot
+        tradesPerSlot.set(slotIdx, tradesPerSlot.get(slotIdx) + 1)
+        pnlPerSlot.set(slotIdx, pnlPerSlot.get(slotIdx) + profit)
+       
+        // Hour totals
+        tradesPerHour.set(hourIdx, tradesPerHour.get(hourIdx) + 1)
+        pnlPerHour.set(hourIdx, pnlPerHour.get(hourIdx) + profit)
+       
+        // Day totals
+        tradesPerDay.set(dayIdx, tradesPerDay.get(dayIdx) + 1)
+        pnlPerDay.set(dayIdx, pnlPerDay.get(dayIdx) + profit)
+       
+        // Overall totals
+        totalTrades := totalTrades + 1
+        totalPnL := totalPnL + profit
+   
+    // Set headers
+    heatmap.cell(0, 0, "", text_color=color.white)
+    for h = 0 to 23
+        heatmap.cell(h + 1, 0, str.tostring(h), text_color=color.white)
+    heatmap.cell(25, 0, "Total", text_color=color.white)  // Total column header
+    for d = 0 to 6
+        heatmap.cell(0, d + 1, array.get(daysOfWeek, d), text_color=color.white)
+    heatmap.cell(0, 8, "Total", text_color=color.white)  // Total row header
+   
+    // Fill day-hour cells and calculate EV
+    for d = 0 to 6
+        for h = 0 to 23
+            slotIdx = d * 24 + h
+            tradeCount = tradesPerSlot.get(slotIdx)
+            totalPnLSlot = pnlPerSlot.get(slotIdx)
+            ev = tradeCount > 0 ? totalPnLSlot / tradeCount : 0
+           
+            // Color based on EV
+            cellColor = ev > 0 ? color.new(color.green, int(100 - ev / 10 * 100)) : ev < 0 ? color.new(color.red, int(100 - math.abs(ev) / 10 * 100)) : color.gray
+            if ev != 0
+                cellColor := color.new(cellColor, math.max(0, math.min(90, 100 - math.abs(ev) * 5)))
+           
+            heatmap.cell(h + 1, d + 1, str.tostring(math.round(ev, 2)), text_color=color.white, bgcolor=cellColor)
+   
+    // Fill total row (EV per hour)
+    for h = 0 to 23
+        tradeCount = tradesPerHour.get(h)
+        totalPnLHour = pnlPerHour.get(h)
+        evHour = tradeCount > 0 ? totalPnLHour / tradeCount : 0
+        cellColor = evHour > 0 ? color.new(color.green, int(100 - evHour / 10 * 100)) : evHour < 0 ? color.new(color.red, int(100 - math.abs(evHour) / 10 * 100)) : color.gray
+        if evHour != 0
+            cellColor := color.new(cellColor, math.max(0, math.min(90, 100 - math.abs(evHour) * 5)))
+        heatmap.cell(h + 1, 8, str.tostring(math.round(evHour, 2)), text_color=color.white, bgcolor=cellColor)
+   
+    // Fill total column (EV per day)
+    for d = 0 to 6
+        tradeCount = tradesPerDay.get(d)
+        totalPnLDay = pnlPerDay.get(d)
+        evDay = tradeCount > 0 ? totalPnLDay / tradeCount : 0
+        cellColor = evDay > 0 ? color.new(color.green, int(100 - evDay / 10 * 100)) : evDay < 0 ? color.new(color.red, int(100 - math.abs(evDay) / 10 * 100)) : color.gray
+        if evDay != 0
+            cellColor := color.new(cellColor, math.max(0, math.min(90, 100 - math.abs(evDay) * 5)))
+        heatmap.cell(25, d + 1, str.tostring(math.round(evDay, 2)), text_color=color.white, bgcolor=cellColor)
+   
+    // Overall EV (bottom-right cell)
+    overallEV = totalTrades > 0 ? totalPnL / totalTrades : 0
+    cellColor = overallEV > 0 ? color.new(color.green, int(100 - overallEV / 10 * 100)) : overallEV < 0 ? color.new(color.red, int(100 - math.abs(overallEV) / 10 * 100)) : color.gray
+    if overallEV != 0
+        cellColor := color.new(cellColor, math.max(0, math.min(90, 100 - math.abs(overallEV) * 5)))
+    heatmap.cell(25, 8, str.tostring(math.round(overallEV, 2)), text_color=color.white, bgcolor=cellColor)
+ 

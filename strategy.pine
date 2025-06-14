@@ -1,0 +1,174 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Mark_The_Systemizer
+
+
+//@version=6
+strategy("Strat: Template", overlay=true)
+
+
+import Mark_The_Systemizer/utils/4 as utils
+
+
+// Trading Inputs
+
+
+
+
+trade_long = input.bool(true, "Trade long", group = "Entry Criteria")
+trade_short = input.bool(true, "Trade short", group = "Entry Criteria")
+pyramiding_type = input.string("No Pyramiding", "Pyramiding", options = ["No Pyramiding", "No Pyramiding, move existing stop", "Allow Pyramiding, move stop and take profit", "Allow Pyramiding, keep original stop and take profit"], group = "Entry Criteria")
+
+
+exit_type = input.string("Risk / Reward", "Exit Type", ["Risk / Reward", "Trailing Stop"], group="Exit criteria")
+risk_reward = input.float(4, "Risk / Reward", group="Exit criteria", tooltip = "Only available with Risk / Reward exit type")
+trailing_stop_length = input.int(3, "Trailing Stop Length", group="Exit criteria", tooltip = "Only available with Trailing Stop exit type")
+
+
+show_ev = input.bool(true, "Show EV", group="EV")
+show_ev_heatmap = input.bool(true, "Show EV Heatmap", group="EV")
+
+
+// In Session calculations
+show_session_table = input.bool(true, "Show session trading table", group="Trading Session")
+InSession(string sessionTimeZone=syminfo.timezone) =>
+
+
+    sessionInput1 = input.session("0000-0000", title="Session 1 Times", group="Trading Session", inline="1", tooltip="Select active days for the session.")
+
+
+    sessionInput2Active = input.bool(false, "Use Session 2 Times", group="Trading Session", inline="2")
+    sessionInput2 = input.session("0000-0000", title="Session 2 Times", group="Trading Session", inline="2", tooltip="Select active days for the session.")
+
+
+    sessionInput3Active = input.bool(false, "Use Session 3 Times", group="Trading Session", inline="3")
+    sessionInput3 = input.session("0000-0000", title="Session 3 Times", group="Trading Session", inline="3", tooltip="Select active days for the session.")
+
+
+    sessionInput4Active = input.bool(false, "Use Session 4 Times", group="Trading Session", inline="5")
+    sessionInput4 = input.session("0000-0000", title="Session 4 Times", group="Trading Session", inline="5", tooltip="Select active days for the session.")
+
+
+    monSession = input.bool(true, title="Mon", group="Trading Session", inline="6")
+    tueSession = input.bool(true, title="Tue", group="Trading Session", inline="6")
+    wedSession = input.bool(true, title="Wed", group="Trading Session", inline="6")
+    thuSession = input.bool(true, title="Thu", group="Trading Session", inline="7")
+    friSession = input.bool(true, title="Fri", group="Trading Session", inline="7")
+    satSession = input.bool(true, title="Sat", group="Trading Session", inline="7")
+    sunSession = input.bool(true, title="Sun", group="Trading Session", inline="7")
+    sessionDays = (sunSession ? "1" : "") + (monSession ? "2" : "") + (tueSession ? "3" : "") + (wedSession ? "4" : "") + (thuSession ? "5" : "") + (friSession ? "6" : "") + (satSession ? "7" : "")
+    tradingSession1 = sessionInput1 + ":" + sessionDays
+    tradingSession2 = sessionInput2 + ":" + sessionDays
+    tradingSession3 = sessionInput3 + ":" + sessionDays
+    tradingSession4 = sessionInput4 + ":" + sessionDays
+    not na(time(timeframe.period, tradingSession1, sessionTimeZone)) or
+     (sessionInput2Active and not na(time(timeframe.period, tradingSession2, sessionTimeZone))) or
+     (sessionInput3Active and not na(time(timeframe.period, tradingSession3, sessionTimeZone))) or
+     (sessionInput4Active and not na(time(timeframe.period, tradingSession4, sessionTimeZone)))
+ 
+
+
+
+// Candle calculations
+
+
+
+
+// Strategy variables
+var int trade_count = 0
+var float last_long_stop = na
+var float last_short_stop = na
+
+
+// Entry conditions
+long_condition = some_criteria and
+                 InSession() and
+                 trade_long
+
+
+short_condition = some_criteria
+                 InSession() and
+                 trade_short
+
+
+
+
+// Strategy
+
+
+trailing_low = ta.lowest(low, trailing_stop_length)
+trainling_high = ta.highest(high, trailing_stop_length)
+
+
+// Move stop if necessary
+if strategy.position_size != 0 and exit_type == 'Trailing Stop' and (pyramiding_type == "Allow Pyramiding, move stop and take profit" or pyramiding_type == "No Pyramiding, move existing stop")
+    if strategy.position_size > 0
+        new_stop = trailing_low
+        if new_stop > last_long_stop
+            last_long_stop := new_stop
+            strategy.exit("Long", stop=last_long_stop)
+
+
+    if strategy.position_size < 0
+        new_stop = trainling_high
+        if new_stop < last_short_stop
+            last_short_stop := new_stop
+     strategy.exit("Short", stop=last_short_stop)
+
+
+// Entry trade or add to existing trade
+if strategy.position_size == 0 or (pyramiding_type != "No Pyramiding" and pyramiding_type == "No Pyramiding, move existing stop")
+
+
+   // Long entry
+    if long_condition
+        last_long_stop := exit_type == 'Trailing Stop' ? trailing_low : low
+        qty = 1 / (close - last_long_stop)
+
+
+        float take_profit = na
+        if exit_type == 'Risk / Reward'
+            take_profit := ((close - last_long_stop) * risk_reward) + close
+
+
+        if strategy.position_size == 0 or pyramiding_type == "Allow Pyramiding, move stop and take profit"
+            strategy.entry("Long", strategy.long, qty = qty)
+            strategy.exit("Long", stop=last_long_stop, limit=take_profit)
+        else
+            trade_count := trade_count + 1
+            strategy.order("Long_" + str.tostring(trade_count), strategy.long, qty=qty)
+            strategy.exit("Long_" + str.tostring(trade_count), stop = last_long_stop, limit=take_profit)
+
+
+   // Short entry
+    if short_condition
+        last_short_stop := exit_type == 'Trailing Stop' ? trainling_high : high
+        qty = 1 / (last_short_stop - close)
+
+
+        float take_profit = na
+        if exit_type == 'Risk / Reward'
+            take_profit := close - ((last_short_stop - close) * risk_reward)
+
+
+        if strategy.position_size == 0 or pyramiding_type == "Allow Pyramiding, move stop and take profit"
+            strategy.entry("Short", strategy.short, qty = qty)
+            strategy.exit("Short", stop=last_short_stop, limit=take_profit)
+        else
+            trade_count := trade_count + 1
+            strategy.order("Short_" + str.tostring(trade_count), strategy.short, qty=qty)
+            strategy.exit("Short_" + str.tostring(trade_count), stop = last_short_stop, limit=take_profit)
+
+
+      
+if barstate.islast or barstate.islastconfirmedhistory
+
+    if show_session_table
+        utils.DrawDailyTable()
+
+
+    if show_ev
+        utils.ev()
+
+
+    if show_ev_heatmap
+        utils.ev_heatmap()
