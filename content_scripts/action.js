@@ -142,6 +142,8 @@ action.testStrategy = async (request, isDeepTest = false) => {
               testResults = await action._removeFullResults(testResults)
           }
 
+          testResults.perfomanceSummary.sort((a, b) => b[testParams.optParamName] - a[testParams.optParamName])
+
         await action._saveTestResults(testResults, testParams)
       }
       // if (isDeepTest)
@@ -178,7 +180,7 @@ action._removeFullResults = async (testResults) => {
             "Total trades: Long",
             "Total EV: Long",
             "Total trades: Short", 
-            "Total EV: Short"
+            "Total EV: Short"       
         ];
         
         // Add priority properties first
