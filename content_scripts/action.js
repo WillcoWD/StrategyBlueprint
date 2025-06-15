@@ -169,24 +169,35 @@ action._removeFullResults = async (testResults) => {
         });
     });
 
-    const propsToKeep = [
-        "Total trades: All",
-        "Total EV: All", 
-        "Total trades: Long",
-        "Total EV: Long",
-        "Total trades: Short", 
-        "Total EV: Short"
-    ];
-
-    // Create new objects with only desired properties in order
-    testResults.perfomanceSummary = testResults.perfomanceSummary.map(item => {
+    testResults.perfomanceSummary.forEach(item => {
+        // First create a new ordered object starting with our priority properties
         const orderedItem = {};
-        propsToKeep.forEach(prop => {
+        const priorityProps = [
+            "Total trades: All",
+            "Total EV: All", 
+            "Total trades: Long",
+            "Total EV: Long",
+            "Total trades: Short", 
+            "Total EV: Short"
+        ];
+        
+        // Add priority properties first
+        priorityProps.forEach(prop => {
             if (item.hasOwnProperty(prop)) {
                 orderedItem[prop] = item[prop];
             }
         });
-        return orderedItem;
+        
+        // Then add all remaining properties
+        Object.keys(item).forEach(prop => {
+            if (!priorityProps.includes(prop)) {
+                orderedItem[prop] = item[prop];
+            }
+        });
+        
+        // Replace the original item with our reordered one
+        Object.keys(item).forEach(key => delete item[key]);
+        Object.assign(item, orderedItem);
     });
 
     return testResults;
